@@ -3,8 +3,6 @@ from os.path import join
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
@@ -41,8 +39,16 @@ def generate_launch_description():
         }]
     )
 
+    rviz_node = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        arguments=['-d', join(get_package_share_directory('ch2_ros'), 'rviz', 'motion.rviz')]
+    )
+
     return LaunchDescription([
         motion_node,
         trajectory1_node,
-        trajectory2_node
+        trajectory2_node,
+        rviz_node
     ])

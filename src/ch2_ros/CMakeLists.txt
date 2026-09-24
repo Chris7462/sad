@@ -18,7 +18,11 @@ find_package(Eigen3 REQUIRED)
 find_package(manif REQUIRED)
 
 add_executable(${PROJECT_NAME}_node
-  src/motion.cpp)
+  src/motion.cpp
+  src/motion_node.cpp)
+
+target_include_directories(${PROJECT_NAME}_node PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 target_link_libraries(${PROJECT_NAME}_node
   PRIVATE
@@ -34,6 +38,9 @@ install(TARGETS ${PROJECT_NAME}_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME})
+
+install(DIRECTORY rviz
   DESTINATION share/${PROJECT_NAME})
 
 # uncomment the following section in order to fill in
