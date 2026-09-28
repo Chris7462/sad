@@ -10,9 +10,9 @@ void IMUIntegration::AddIMU(const IMU & imu)
 {
   double dt = imu.timestamp_ - timestamp_;
   if (dt > 0.0 && dt < 0.1) {
-    p_ = p_ + v_ * dt + 0.5 * (R_ * (imu.acce_ - ba_) + gravity_) * dt * dt;
-    v_ = v_ + (R_ * (imu.acce_ - ba_) + gravity_) * dt;
-    R_ = R_ * Sophus::SO3d::exp((imu.gyro_ - bg_) * dt);
+    p_ = p_ + v_ * dt + 0.5 * (R_.act(imu.acce_ - ba_) + gravity_) * dt * dt;
+    v_ = v_ + (R_.act(imu.acce_ - ba_) + gravity_) * dt;
+    R_ = R_.rplus(manif::SO3Tangentd((imu.gyro_ - bg_) * dt));
   }
 
   timestamp_ = imu.timestamp_;

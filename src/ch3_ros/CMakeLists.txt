@@ -14,8 +14,7 @@ find_package(rclcpp REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(Sophus REQUIRED)
-#find_package(manif REQUIRED)
+find_package(manif REQUIRED)
 
 add_executable(${PROJECT_NAME}_node
   src/imu_ros_node.cpp
@@ -31,8 +30,7 @@ target_link_libraries(${PROJECT_NAME}_node
     ${tf2_ros_TARGETS}
     ${tf2_eigen_TARGETS}
     Eigen3::Eigen
-    Sophus::Sophus
-    #MANIF::manif
+    MANIF::manif
 )
 
 install(TARGETS ${PROJECT_NAME}_node

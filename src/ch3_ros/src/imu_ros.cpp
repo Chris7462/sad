@@ -73,6 +73,6 @@ void ImuReplay::timer_callback()
   msg.header.frame_id = "map";
   msg.child_frame_id = "imu_link";
   msg.transform.translation = tf2::toMsg2(imu_integ_.GetP());
-  msg.transform.rotation = tf2::toMsg(imu_integ_.GetR().unit_quaternion());
+  msg.transform.rotation = tf2::toMsg(imu_integ_.GetR().quat());
   tf_broadcaster_->sendTransform(msg);
 }
