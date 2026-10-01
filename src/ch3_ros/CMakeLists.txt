@@ -13,27 +13,54 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_eigen REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(manif REQUIRED)
+#find_package(Sophus REQUIRED)
+#find_package(glog REQUIRED)
 
-add_executable(${PROJECT_NAME}_node
+list(APPEND CMAKE_MODULE_PATH /usr/share/cmake/geographiclib)
+find_package(GeographicLib REQUIRED)
+
+add_executable(imu_ros_node
   src/imu_ros_node.cpp
   src/imu_ros.cpp
   src/imu_integration.cpp)
 
-target_include_directories(${PROJECT_NAME}_node PRIVATE
+target_include_directories(imu_ros_node PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-target_link_libraries(${PROJECT_NAME}_node
+target_link_libraries(imu_ros_node
   PRIVATE
     rclcpp::rclcpp
     ${tf2_ros_TARGETS}
     ${tf2_eigen_TARGETS}
+    ${sensor_msgs_TARGETS}
     Eigen3::Eigen
-    MANIF::manif
-)
+    MANIF::manif)
 
-install(TARGETS ${PROJECT_NAME}_node
+add_executable(gnss_ros_node
+  src/gnss_ros_node.cpp
+  src/gnss_ros.cpp
+  src/utm_convert.cpp)
+
+target_include_directories(gnss_ros_node PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${GeographicLib_INCLUDE_DIRS})
+
+target_link_libraries(gnss_ros_node
+  PRIVATE
+    rclcpp::rclcpp
+    ${tf2_ros_TARGETS}
+    ${tf2_eigen_TARGETS}
+    ${sensor_msgs_TARGETS}
+    Eigen3::Eigen
+    #Sophus::Sophus
+    MANIF::manif
+    #glog::glog
+    ${GeographicLib_LIBRARIES})
+
+install(TARGETS imu_ros_node gnss_ros_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch
@@ -41,10 +68,6 @@ install(DIRECTORY launch
 
 install(DIRECTORY rviz
   DESTINATION share/${PROJECT_NAME})
-
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
