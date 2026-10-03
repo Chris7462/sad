@@ -13,6 +13,10 @@
   <depend>tf2_ros</depend>
   <depend>tf2_eigen</depend>
   <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>eigen</depend>
+  <depend>manif</depend>
+  <depend>geographiclib</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

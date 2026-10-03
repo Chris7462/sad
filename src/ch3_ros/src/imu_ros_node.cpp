@@ -5,7 +5,7 @@
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<ImuReplay>());
+  rclcpp::spin(std::make_shared<ImuRos>());
   rclcpp::shutdown();
 
   return 0;

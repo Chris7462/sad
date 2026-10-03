@@ -5,9 +5,9 @@
     # Output bag directory (relative to where you launch from). Must not exist yet.
     output_bag: "sad_ch3_10_bag"
 
-    imu_topic: "sad/imu"
-    gnss_topic: "sad/gnss"
-    odom_topic: "sad/odom"
+    imu_topic: "/sad/imu"
+    gnss_topic: "/sad/gnss"
+    odom_topic: "/sad/odom"
 
     imu_frame_id: "imu_link"
     gnss_frame_id: "gnss_link"
