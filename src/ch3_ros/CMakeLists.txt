@@ -18,6 +18,7 @@ find_package(tf2_ros REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(manif REQUIRED)
 #find_package(Sophus REQUIRED)
@@ -83,7 +84,39 @@ target_compile_options(gnss_ros_node PRIVATE
   -Wextra
   -Wpedantic)
 
-install(TARGETS imu_ros_node gnss_ros_node
+# ESKF GNSS + IMU fusion node
+add_executable(eskf_ros_node
+  src/eskf_ros_node.cpp
+  src/eskf_ros.cpp
+  src/eskf.cpp
+  src/static_imu_init.cpp
+  src/utm_convert.cpp)
+
+target_include_directories(eskf_ros_node PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/include
+  ${GeographicLib_INCLUDE_DIRS})
+
+target_link_libraries(eskf_ros_node
+  PRIVATE
+    rclcpp::rclcpp
+    ${tf2_ros_TARGETS}
+    ${tf2_eigen_TARGETS}
+    ${sensor_msgs_TARGETS}
+    ${geometry_msgs_TARGETS}
+    ${nav_msgs_TARGETS}
+    Eigen3::Eigen
+    MANIF::manif
+    ${sad_msgs_TARGETS}
+    ${GeographicLib_LIBRARIES})
+
+target_compile_features(eskf_ros_node PRIVATE cxx_std_20)
+
+target_compile_options(eskf_ros_node PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic)
+
+install(TARGETS imu_ros_node gnss_ros_node eskf_ros_node
   DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch
