@@ -30,6 +30,12 @@ private:
   void gnss_callback(const sad_msgs::msg::Gnss & msg);
   void odom_callback(const sad_msgs::msg::WheelPulse & msg);
 
+  /// Fuse a GNSS reading with valid heading (6-DoF). The first one starts the filter.
+  void fuse_gnss_pose(GNSS & gnss, const builtin_interfaces::msg::Time & stamp);
+
+  /// Fuse only the position of a GNSS reading whose heading is invalid (3-DoF)
+  void fuse_gnss_position(GNSS & gnss, const builtin_interfaces::msg::Time & stamp);
+
   /// Publish the nominal state as tf and nav_msgs/Odometry, stamped with the data time
   void publish_state(const builtin_interfaces::msg::Time & stamp);
 

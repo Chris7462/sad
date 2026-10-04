@@ -156,6 +156,30 @@ bool ESKF::ObserveGps(const GNSS & gnss)
   return true;
 }
 
+bool ESKF::ObservePosition(double timestamp, const Vec3d & position)
+{
+  if (first_gnss_ || timestamp < current_time_) {
+    return false;
+  }
+
+  // Observes p only: H is 3x18 with identity on the p block
+  Eigen::Matrix<double, 3, 18> H = Eigen::Matrix<double, 3, 18>::Zero();
+  H.block<3, 3>(0, 0) = Mat3d::Identity();
+
+  // Position part of the GNSS noise (x, y, height)
+  const Mat3d noise = gnss_noise_.topLeftCorner<3, 3>();
+
+  const Eigen::Matrix<double, 18, 3> K =
+    cov_ * H.transpose() * (H * cov_ * H.transpose() + noise).inverse();
+
+  dx_ = K * (position - p_);
+  cov_ = (Mat18d::Identity() - K * H) * cov_;
+
+  UpdateAndReset();
+  current_time_ = timestamp;
+  return true;
+}
+
 bool ESKF::ObserveSE3(const manif::SE3d & pose, double trans_std, double ang_std)
 {
   const double t2 = trans_std * trans_std;

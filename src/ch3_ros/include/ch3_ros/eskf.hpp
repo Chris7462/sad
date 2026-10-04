@@ -21,6 +21,7 @@
  *  - every noise option is a standard deviation and is squared when the matrices are built
  *  - the GNSS update uses the 6x6 GNSS noise matrix, so the height noise takes effect
  *  - data older than the filter time is rejected (returns false) instead of asserting
+ *  - ObservePosition() lets GNSS readings without a valid heading still correct the position
  */
 class ESKF
 {
@@ -74,6 +75,14 @@ public:
 
   /// GNSS observation. The first one initializes R and p. False if older than the filter time.
   bool ObserveGps(const GNSS & gnss);
+
+  /// Position-only observation (body position in the local frame), using the GNSS position
+  /// noise. For GNSS readings without a valid heading. False if the filter has no initial pose
+  /// yet or the reading is older than the filter time.
+  bool ObservePosition(double timestamp, const Vec3d & position);
+
+  /// True once the first GNSS reading has set the initial pose
+  bool PoseInitialized() const {return !first_gnss_;}
 
   /// Generic pose observation with isotropic noise (standard deviations)
   bool ObserveSE3(

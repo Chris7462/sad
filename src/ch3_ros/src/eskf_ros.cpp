@@ -125,9 +125,18 @@ void EskfRos::gnss_callback(const sad_msgs::msg::Gnss & msg)
     return;
   }
 
-  // Only RTK readings with valid heading are fused
   GNSS gnss(msg);
-  if (!ConvertGps2UTM(gnss, antenna_pos_, antenna_angle_) || !gnss.heading_valid_) {
+  if (gnss.heading_valid_) {
+    fuse_gnss_pose(gnss, msg.header.stamp);
+  } else if (gnss_inited_) {
+    fuse_gnss_position(gnss, msg.header.stamp);
+  }
+  // Otherwise the reading is dropped: without a heading it cannot start the filter
+}
+
+void EskfRos::fuse_gnss_pose(GNSS & gnss, const builtin_interfaces::msg::Time & stamp)
+{
+  if (!ConvertGps2UTM(gnss, antenna_pos_, antenna_angle_)) {
     return;
   }
 
@@ -151,17 +160,46 @@ void EskfRos::gnss_callback(const sad_msgs::msg::Gnss & msg)
     RCLCPP_INFO(get_logger(), "First valid GNSS reading received, ESKF started.");
   }
 
-  publish_state(msg.header.stamp);
+  publish_state(stamp);
+}
+
+void EskfRos::fuse_gnss_position(GNSS & gnss, const builtin_interfaces::msg::Time & stamp)
+{
+  // Antenna position only: no heading is needed for this conversion
+  if (!ConvertGps2UTMOnlyTrans(gnss)) {
+    return;
+  }
+
+  // Antenna -> body: p_body = p_antenna - R * t_antenna_in_body. The reading has no usable
+  // heading, so the lever arm is rotated with the attitude estimated by the filter.
+  const NavState state = eskf_.GetNominalState();
+  const Eigen::Vector3d lever_arm(antenna_pos_.x(), antenna_pos_.y(), 0.0);
+  const Eigen::Vector3d position =
+    gnss.utm_pose_.translation() - state.R_.act(lever_arm) - origin_;
+
+  if (!eskf_.ObservePosition(gnss.unix_time_, position)) {
+    RCLCPP_WARN_THROTTLE(
+      get_logger(), *get_clock(), 1000,
+      "GNSS position reading skipped: %.4f s older than the filter time",
+      eskf_.GetCurrentTime() - gnss.unix_time_);
+    return;
+  }
+
+  publish_state(stamp);
 }
 
 void EskfRos::odom_callback(const sad_msgs::msg::WheelPulse & msg)
 {
   const Odom odom(rclcpp::Time(msg.header.stamp).seconds(), msg.left_pulse, msg.right_pulse);
 
-  // The static initializer always needs the wheel speed to know the vehicle stands still
-  imu_init_.AddOdom(odom);
+  // Before the static initialization: the wheel speed only tells whether the vehicle stands still
+  if (!imu_inited_) {
+    imu_init_.AddOdom(odom);
+    return;
+  }
 
-  if (with_odom_ && imu_inited_ && gnss_inited_) {
+  // Optional velocity update, once the filter has its initial pose from GNSS
+  if (with_odom_ && gnss_inited_) {
     if (!eskf_.ObserveWheelSpeed(odom)) {
       RCLCPP_WARN_THROTTLE(
         get_logger(), *get_clock(), 1000,
