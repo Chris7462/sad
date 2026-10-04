@@ -6,7 +6,7 @@
 
 
 #include <rclcpp/time.hpp>
-#include <sensor_msgs/msg/nav_sat_fix.hpp>
+#include <sad_msgs/msg/gnss.hpp>
 
 enum class GpsStatusType
 {
@@ -32,21 +32,18 @@ struct UTMCoordinate {
 struct GNSS {
   GNSS() = default;
   GNSS(double unix_time, int status, const Eigen::Vector3d & lat_lon_alt, double heading, bool heading_valid)
-    : unix_time_(unix_time), lat_lon_alt_(lat_lon_alt), heading_(heading), heading_valid_(heading_valid) {
-    status_ = GpsStatusType(status);
-  }
+    : unix_time_(unix_time),
+      status_(GpsStatusType(status)),
+      lat_lon_alt_(lat_lon_alt),
+      heading_(heading),
+      heading_valid_(heading_valid) {}
 
-  GNSS(sensor_msgs::msg::NavSatFix::SharedPtr msg) {
-    rclcpp::Time stamp = msg->header.stamp;
-    unix_time_ = stamp.seconds();
-
-    if (int(msg->status.status) >= int(sensor_msgs::msg::NavSatStatus::STATUS_FIX)) {
-      status_ = GpsStatusType::GNSS_FIXED_SOLUTION;
-    } else {
-      status_ = GpsStatusType::GNSS_OTHER;
-    }
-    lat_lon_alt_ << msg->latitude, msg->longitude, msg->altitude;
-  }
+  explicit GNSS(const sad_msgs::msg::Gnss & msg)
+  : unix_time_(rclcpp::Time(msg.header.stamp).seconds()),
+    status_(GpsStatusType(msg.status)),
+    lat_lon_alt_(msg.latitude, msg.longitude, msg.altitude),
+    heading_(msg.heading),
+    heading_valid_(msg.heading_valid) {}
 
   double unix_time_ = 0;
   GpsStatusType status_ = GpsStatusType::GNSS_NOT_EXIST;

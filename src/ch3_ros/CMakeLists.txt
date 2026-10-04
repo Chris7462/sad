@@ -22,6 +22,7 @@ find_package(Eigen3 REQUIRED)
 find_package(manif REQUIRED)
 #find_package(Sophus REQUIRED)
 #find_package(glog REQUIRED)
+find_package(sad_msgs REQUIRED)
 
 list(APPEND CMAKE_MODULE_PATH /usr/share/cmake/geographiclib)
 find_package(GeographicLib REQUIRED)
@@ -72,6 +73,7 @@ target_link_libraries(gnss_ros_node
     #Sophus::Sophus
     MANIF::manif
     #glog::glog
+    ${sad_msgs_TARGETS}
     ${GeographicLib_LIBRARIES})
 
 target_compile_features(gnss_ros_node PRIVATE cxx_std_20)

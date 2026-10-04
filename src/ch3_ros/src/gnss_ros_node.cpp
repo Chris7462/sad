@@ -4,7 +4,7 @@
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<GnssReplay>());
+  rclcpp::spin(std::make_shared<GnssRos>());
   rclcpp::shutdown();
 
   return 0;
