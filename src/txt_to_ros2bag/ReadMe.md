@@ -4,9 +4,9 @@ Converts the SAD book txt sensor log (e.g. `data/ch3/10.txt`) into a ROS 2 bag (
 
 | Line in txt | Topic | Type |
 |---|---|---|
-| `IMU t gx gy gz ax ay az` | `/imu` | `sensor_msgs/msg/Imu` |
-| `GNSS t lat lon alt heading heading_valid` | `/gnss` | `sad_msgs/msg/Gnss` |
-| `ODOM t left right` | `/odom` | `sad_msgs/msg/WheelPulse` |
+| `IMU t gx gy gz ax ay az` | `/sad/imu` | `sensor_msgs/msg/Imu` |
+| `GNSS t lat lon alt heading heading_valid` | `/sad/gnss` | `sad_msgs/msg/Gnss` |
+| `ODOM t left right` | `/sad/odom` | `sad_msgs/msg/WheelPulse` |
 
 `header.stamp` and the bag record time are both the timestamp from the txt file.
 

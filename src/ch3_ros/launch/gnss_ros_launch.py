@@ -3,11 +3,24 @@ from os.path import join
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, TimerAction
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    bag_arg = DeclareLaunchArgument(
+        'bag',
+        default_value='/home/yi-chen/Research/sad/sad_ch3_10_bag',
+        description='Path to the bag created by txt_to_ros2bag'
+    )
+
+    rate_arg = DeclareLaunchArgument(
+        'rate',
+        default_value='1.0',
+        description='Bag playback rate'
+    )
+
     gnss_ros_node = Node(
         package='ch3_ros',
         executable='gnss_ros_node',
@@ -31,8 +44,8 @@ def generate_launch_description():
             'use_sim_time': True,
             'target_frame_name': 'map',
             'source_frame_name': 'gnss_link',
-            'trajectory_update_rate': 100.0,
-            'trajectory_publish_rate': 100.0
+            'trajectory_update_rate': 10.0,
+            'trajectory_publish_rate': 10.0
         }]
     )
 
@@ -45,17 +58,19 @@ def generate_launch_description():
     )
 
     bag_exec = ExecuteProcess(
-        cmd=['ros2', 'bag', 'play', '-r', '1.0',
-             '/home/yi-chen/Research/sad/sad_ch3_10_bag',
-             '--clock']
+        cmd=['ros2', 'bag', 'play', LaunchConfiguration('bag'),
+             '--clock', '-r', LaunchConfiguration('rate')],
+        output='screen'
     )
 
     return LaunchDescription([
+        bag_arg,
+        rate_arg,
         gnss_ros_node,
         trajectory_node,
         rviz_node,
         TimerAction(
-            period=3.0,  # delay these nodes for 3.0 seconds.
+            period=3.0,  # give the nodes time to subscribe before playback starts
             actions=[
                 bag_exec
             ]

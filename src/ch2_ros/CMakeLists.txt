@@ -1,11 +1,14 @@
-cmake_minimum_required(VERSION 3.16)
-project(ch2_ros)
+cmake_minimum_required(VERSION 3.20)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+project(ch2_ros
+  VERSION 0.1.0
+  DESCRIPTION "SAD chapter 2: Basic ROS 2 Concepts"
+  LANGUAGES C CXX)
 
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
+# Default to a Release build if the user doesn't specify one
+if(NOT CMAKE_BUILD_TYPE)
+  message(STATUS "No build type specified, defaulting to 'Release'.")
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
 endif()
 
 # find dependencies
@@ -27,12 +30,17 @@ target_include_directories(${PROJECT_NAME}_node PRIVATE
 target_link_libraries(${PROJECT_NAME}_node
   PRIVATE
     rclcpp::rclcpp
-    ${std_msgs_TARGETS}
     ${tf2_ros_TARGETS}
     ${tf2_eigen_TARGETS}
     Eigen3::Eigen
-    MANIF::manif
-)
+    MANIF::manif)
+
+target_compile_features(${PROJECT_NAME}_node PRIVATE cxx_std_20)
+
+target_compile_options(${PROJECT_NAME}_node PRIVATE
+  -Wall
+  -Wextra
+  -Wpedantic)
 
 install(TARGETS ${PROJECT_NAME}_node
   DESTINATION lib/${PROJECT_NAME})

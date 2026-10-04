@@ -1,6 +1,5 @@
 #include <chrono>
 
-#include <std_msgs/msg/string.hpp>
 #include <tf2_eigen/tf2_eigen.hpp>
 
 #include "ch2_ros/motion.hpp"
