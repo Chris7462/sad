@@ -3,24 +3,6 @@
 #include "ch3_ros/eskf.hpp"
 
 
-namespace
-{
-// so(3) hat operator
-Eigen::Matrix3d Hat(const Eigen::Vector3d & v)
-{
-  Eigen::Matrix3d m;
-  m << 0.0, -v.z(), v.y(),
-    v.z(), 0.0, -v.x(),
-    -v.y(), v.x(), 0.0;
-  return m;
-}
-
-manif::SO3d Exp(const Eigen::Vector3d & v)
-{
-  return manif::SO3Tangentd(v).exp();
-}
-}  // namespace
-
 void ESKF::SetInitialConditions(
   const Options & options, const Vec3d & init_bg, const Vec3d & init_ba, const Vec3d & gravity)
 {
@@ -87,7 +69,13 @@ bool ESKF::Predict(const IMU & imu)
   const Vec3d acce_world = R_.act(imu.acce_ - ba_);
   const Vec3d new_p = p_ + v_ * dt + 0.5 * acce_world * dt * dt + 0.5 * g_ * dt * dt;
   const Vec3d new_v = v_ + acce_world * dt + g_ * dt;
-  const manif::SO3d new_R = R_ * Exp((imu.gyro_ - bg_) * dt);
+
+  // R_new = R (+) tau, with tau = (gyro - bg) * dt. manif also returns the Jacobians of this
+  // operation, which are exactly the rotation blocks of F below:
+  //   J_R   = d(R_new) / d(R)   = Exp(-tau)
+  //   J_tau = d(R_new) / d(tau) = Jr(tau), the right Jacobian of SO(3)
+  manif::SO3d::Jacobian J_R, J_tau;
+  const manif::SO3d new_R = R_.rplus(manif::SO3Tangentd((imu.gyro_ - bg_) * dt), J_R, J_tau);
 
   R_ = new_R;
   v_ = new_v;
@@ -97,11 +85,20 @@ bool ESKF::Predict(const IMU & imu)
   // Error state propagation: motion Jacobian F, eq. (3.47)
   Mat18d F = Mat18d::Identity();
   F.block<3, 3>(0, 3) = Mat3d::Identity() * dt;                           // p wrt v
-  F.block<3, 3>(3, 6) = -R_.rotation() * Hat(imu.acce_ - ba_) * dt;       // v wrt theta
+  // F.block<3, 3>(3, 6) = -R_.rotation() * Hat(imu.acce_ - ba_) * dt;       // v wrt theta
+  F.block<3, 3>(3, 6) = -R_.rotation() * manif::skew(imu.acce_ - ba_) * dt;   // v wrt theta
   F.block<3, 3>(3, 12) = -R_.rotation() * dt;                             // v wrt ba
   F.block<3, 3>(3, 15) = Mat3d::Identity() * dt;                          // v wrt g
-  F.block<3, 3>(6, 6) = Exp(-(imu.gyro_ - bg_) * dt).rotation();          // theta wrt theta
-  F.block<3, 3>(6, 9) = -Mat3d::Identity() * dt;                          // theta wrt bg
+  // theta wrt theta: how an attitude error is carried through the propagation. The book writes
+  // Exp(-(gyro - bg) * dt) by hand; it is the Jacobian of rplus wrt R.
+  // F.block<3, 3>(6, 6) = Exp(-(imu.gyro_ - bg_) * dt).rotation();          // theta wrt theta
+  F.block<3, 3>(6, 6) = J_R;
+  // theta wrt bg: bg enters through tau = (gyro - bg) * dt, so d(tau)/d(bg) = -I * dt and the
+  // chain rule gives -Jr(tau) * dt. The book approximates Jr(tau) by I, i.e. -I * dt. Since
+  // Jr(tau) = I - 0.5 * skew(tau) + ..., and tau is tiny for one IMU step, the two differ only
+  // by a term of order dt^2.
+  // F.block<3, 3>(6, 9) = -Mat3d::Identity() * dt;                          // theta wrt bg
+  F.block<3, 3>(6, 9) = -J_tau * dt;
 
   // dx_ is zero after every reset, so only the covariance needs propagating
   cov_ = F * cov_.eval() * F.transpose() + Q_;
@@ -204,7 +201,8 @@ bool ESKF::ObserveSE3(const manif::SE3d & pose, const Mat6d & noise)
   const manif::SO3d R_obs(pose.quat());
   Vec6d innov = Vec6d::Zero();
   innov.head<3>() = pose.translation() - p_;
-  innov.tail<3>() = (R_.inverse() * R_obs).log().coeffs();   // eq. (3.67)
+  //innov.tail<3>() = (R_.inverse() * R_obs).log().coeffs();   // eq. (3.67)
+  innov.tail<3>() = R_obs.rminus(R_).coeffs();   // Log(R^-1 * R_obs), eq. (3.67)
 
   dx_ = K * innov;
   cov_ = (Mat18d::Identity() - K * H) * cov_;
@@ -217,7 +215,8 @@ void ESKF::UpdateAndReset()
 {
   p_ += dx_.segment<3>(0);
   v_ += dx_.segment<3>(3);
-  R_ = R_ * Exp(dx_.segment<3>(6));
+  // R_ = R_ * Exp(dx_.segment<3>(6));
+  R_ = R_.rplus(manif::SO3Tangentd(dx_.segment<3>(6)));
 
   if (options_.update_bias_gyro_) {
     bg_ += dx_.segment<3>(9);
@@ -236,6 +235,7 @@ void ESKF::UpdateAndReset()
 void ESKF::ProjectCov()
 {
   Mat18d J = Mat18d::Identity();
-  J.block<3, 3>(6, 6) = Mat3d::Identity() - 0.5 * Hat(dx_.segment<3>(6));
+  //J.block<3, 3>(6, 6) = Mat3d::Identity() - 0.5 * Hat(dx_.segment<3>(6));
+  J.block<3, 3>(6, 6) = Mat3d::Identity() - 0.5 * manif::skew(dx_.segment<3>(6));
   cov_ = J * cov_ * J.transpose();
 }

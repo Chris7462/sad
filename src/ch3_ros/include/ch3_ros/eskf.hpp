@@ -22,6 +22,8 @@
  *  - the GNSS update uses the 6x6 GNSS noise matrix, so the height noise takes effect
  *  - data older than the filter time is rejected (returns false) instead of asserting
  *  - ObservePosition() lets GNSS readings without a valid heading still correct the position
+ *  - the rotation blocks of F come from the Jacobians of manif's rplus; the theta-wrt-bg block
+ *    is therefore -Jr(tau) * dt instead of the book's first-order -I * dt
  */
 class ESKF
 {
