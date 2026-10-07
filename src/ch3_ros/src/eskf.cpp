@@ -65,44 +65,120 @@ bool ESKF::Predict(const IMU & imu)
     return false;
   }
 
+  // --------------------------------------------------------------------------
+  // Save the nominal state at time k.
+  //
+  // The discrete propagation equations for p_{k+1} and v_{k+1} below are
+  // evaluated using R_k. Therefore, the corresponding Jacobian blocks in F
+  // must also be evaluated at the same R_k.
+  // --------------------------------------------------------------------------
+  const manif::SO3d R_k = R_;
+  const Mat3d Rk = R_k.rotation();
+  const Vec3d acce = imu.acce_ - ba_;
+  const Vec3d gyro = imu.gyro_ - bg_;
+
+  // --------------------------------------------------------------------------
   // Nominal state propagation
-  const Vec3d acce_world = R_.act(imu.acce_ - ba_);
+  //
+  // p_{k+1} = p_k + v_k dt + 1/2 R_k (a_tilde - b_a) dt^2 + 1/2 g_k dt^2
+  // v_{k+1} = v_k + R_k (a_tilde - b_a) dt + g_k dt
+  // --------------------------------------------------------------------------
+  const Vec3d acce_world = R_k.act(acce);
+
   const Vec3d new_p = p_ + v_ * dt + 0.5 * acce_world * dt * dt + 0.5 * g_ * dt * dt;
   const Vec3d new_v = v_ + acce_world * dt + g_ * dt;
 
-  // R_new = R (+) tau, with tau = (gyro - bg) * dt. manif also returns the Jacobians of this
-  // operation, which are exactly the rotation blocks of F below:
-  //   J_R   = d(R_new) / d(R)   = Exp(-tau)
-  //   J_tau = d(R_new) / d(tau) = Jr(tau), the right Jacobian of SO(3)
+  // --------------------------------------------------------------------------
+  // Rotation propagation
+  //
+  // R_{k+1} = R_k (+) tau = R_k Exp(tau)
+  // tau = (omega_tilde - b_g) dt
+  //
+  // manif also returns the local Jacobians:
+  //   J_R   = d(R_{k+1}) / d(R_k) = Exp(-tau)
+  //   J_tau = d(R_{k+1}) / d(tau) = Jr(tau)
+  // where Jr is the right Jacobian of SO(3).
+  // --------------------------------------------------------------------------
   manif::SO3d::Jacobian J_R, J_tau;
-  const manif::SO3d new_R = R_.rplus(manif::SO3Tangentd((imu.gyro_ - bg_) * dt), J_R, J_tau);
+  const manif::SO3Tangentd tau(gyro * dt);
+  const manif::SO3d new_R = R_k.rplus(tau, J_R, J_tau);
 
+  // --------------------------------------------------------------------------
+  // Error-state propagation:
+  //
+  //   dx = [ dp, dv, dtheta, dbg, dba, dg ]
+  //
+  // Instead of starting from the continuous-time error-state equations and
+  // using F_d ~= I + F_c dt, construct F directly by linearizing the discrete
+  // nominal propagation equations above.
+  //
+  // This keeps several O(dt^2) terms in the position row that are absent in
+  // the first-order discretization used in the book.
+  // --------------------------------------------------------------------------
+  Mat18d F = Mat18d::Identity();
+  const Mat3d I3 = Mat3d::Identity();
+
+  // --------------------------------------------------------------------------
+  // Position row
+  // p_{k+1} = p_k + v_k dt + 1/2 R_k (a_tilde - b_a) dt^2 + 1/2 g_k dt^2
+  // --------------------------------------------------------------------------
+  F.block<3, 3>(0, 3) = I3 * dt;                                  // p wrt v
+  F.block<3, 3>(0, 6) = -0.5 * Rk * manif::skew(acce) * dt * dt;  // p wrt theta
+  F.block<3, 3>(0, 12) = -0.5 * Rk * dt * dt;                     // p wrt ba
+  F.block<3, 3>(0, 15) = 0.5 * I3 * dt * dt;                      // p wrt g
+
+  // --------------------------------------------------------------------------
+  // Velocity row
+  // v_{k+1} = v_k + R_k (a_tilde - b_a) dt + g_k dt
+  // --------------------------------------------------------------------------
+  F.block<3, 3>(3, 6) = -Rk * manif::skew(acce) * dt;             // v wrt theta
+  F.block<3, 3>(3, 12) = -Rk * dt;                                // v wrt ba
+  F.block<3, 3>(3, 15) = I3 * dt;                                 // v wrt g
+
+  // --------------------------------------------------------------------------
+  // Rotation row
+  // R_{k+1} = R_k Exp(tau)
+  //
+  // theta wrt theta:
+  //   F_theta_theta = J_R = Exp(-tau)
+  //
+  // theta wrt gyro bias:
+  //   tau = (omega_tilde - b_g) dt
+  //   d tau / d b_g = -I dt
+  //
+  // therefore
+  //   F_theta_bg = J_tau (-I dt)
+  //              = -Jr(tau) dt
+  // --------------------------------------------------------------------------
+  F.block<3, 3>(6, 6) = J_R;                                      // theta wrt theta
+  F.block<3, 3>(6, 9) = -J_tau * dt;                              // theta wrt bg
+
+  // --------------------------------------------------------------------------
+  // Bias and gravity rows
+  //
+  // b_g,k+1 = b_g,k
+  // b_a,k+1 = b_a,k
+  // g_k+1   = g_k
+  //
+  // Their diagonal blocks are already Identity because F was initialized with
+  // Mat18d::Identity().
+  // --------------------------------------------------------------------------
+
+  // --------------------------------------------------------------------------
+  // Covariance propagation
+  // --------------------------------------------------------------------------
+  cov_ = F * cov_.eval() * F.transpose() + Q_;
+
+  // --------------------------------------------------------------------------
+  // Commit nominal state propagation only after F has been constructed using
+  // the time-k nominal state.
+  // --------------------------------------------------------------------------
   R_ = new_R;
   v_ = new_v;
   p_ = new_p;
-  // bg, ba and g stay the same
 
-  // Error state propagation: motion Jacobian F, eq. (3.47)
-  Mat18d F = Mat18d::Identity();
-  F.block<3, 3>(0, 3) = Mat3d::Identity() * dt;                           // p wrt v
-  // F.block<3, 3>(3, 6) = -R_.rotation() * Hat(imu.acce_ - ba_) * dt;       // v wrt theta
-  F.block<3, 3>(3, 6) = -R_.rotation() * manif::skew(imu.acce_ - ba_) * dt;   // v wrt theta
-  F.block<3, 3>(3, 12) = -R_.rotation() * dt;                             // v wrt ba
-  F.block<3, 3>(3, 15) = Mat3d::Identity() * dt;                          // v wrt g
-  // theta wrt theta: how an attitude error is carried through the propagation. The book writes
-  // Exp(-(gyro - bg) * dt) by hand; it is the Jacobian of rplus wrt R.
-  // F.block<3, 3>(6, 6) = Exp(-(imu.gyro_ - bg_) * dt).rotation();          // theta wrt theta
-  F.block<3, 3>(6, 6) = J_R;
-  // theta wrt bg: bg enters through tau = (gyro - bg) * dt, so d(tau)/d(bg) = -I * dt and the
-  // chain rule gives -Jr(tau) * dt. The book approximates Jr(tau) by I, i.e. -I * dt. Since
-  // Jr(tau) = I - 0.5 * skew(tau) + ..., and tau is tiny for one IMU step, the two differ only
-  // by a term of order dt^2.
-  // F.block<3, 3>(6, 9) = -Mat3d::Identity() * dt;                          // theta wrt bg
-  F.block<3, 3>(6, 9) = -J_tau * dt;
-
-  // dx_ is zero after every reset, so only the covariance needs propagating
-  cov_ = F * cov_.eval() * F.transpose() + Q_;
   current_time_ = imu.timestamp_;
+
   return true;
 }
 
