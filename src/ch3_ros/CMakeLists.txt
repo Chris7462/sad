@@ -89,7 +89,7 @@ add_executable(eskf_ros_node
   src/eskf_ros_node.cpp
   src/eskf_ros.cpp
   src/eskf.cpp
-  src/static_imu_init.cpp
+  src/static_init.cpp
   src/utm_convert.cpp)
 
 target_include_directories(eskf_ros_node PRIVATE

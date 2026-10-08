@@ -73,8 +73,8 @@ void EskfRos::imu_callback(const sensor_msgs::msg::Imu & msg)
       msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z));
 
   // 1. Static initialization: needs the vehicle standing still
-  if (!imu_init_.InitSuccess()) {
-    imu_init_.AddIMU(imu);
+  if (!static_init_.InitSuccess()) {
+    static_init_.AddIMU(imu);
     RCLCPP_INFO_THROTTLE(
       get_logger(), *get_clock(), 5000, "Waiting for the static IMU initialization ...");
     return;
@@ -83,12 +83,12 @@ void EskfRos::imu_callback(const sensor_msgs::msg::Imu & msg)
   // 2. First reading after the initialization: configure the ESKF
   if (!imu_inited_) {
     // Measurement noise estimated by the initializer (variance -> standard deviation)
-    eskf_options_.gyro_std_ = std::sqrt(imu_init_.GetCovGyro()[0]);
-    eskf_options_.acce_std_ = std::sqrt(imu_init_.GetCovAcce()[0]);
+    eskf_options_.gyro_std_ = std::sqrt(static_init_.GetCovGyro()[0]);
+    eskf_options_.acce_std_ = std::sqrt(static_init_.GetCovAcce()[0]);
 
-    const Eigen::Vector3d bg = imu_init_.GetInitBg();
-    const Eigen::Vector3d ba = imu_init_.GetInitBa();
-    const Eigen::Vector3d gravity = imu_init_.GetGravity();
+    const Eigen::Vector3d bg = static_init_.GetInitBg();
+    const Eigen::Vector3d ba = static_init_.GetInitBa();
+    const Eigen::Vector3d gravity = static_init_.GetGravity();
     eskf_.SetInitialConditions(eskf_options_, bg, ba, gravity);
     imu_inited_ = true;
 
@@ -98,6 +98,27 @@ void EskfRos::imu_callback(const sensor_msgs::msg::Imu & msg)
       "gravity = [%.4f, %.4f, %.4f], gyro std = %.6f, acce std = %.6f",
       bg.x(), bg.y(), bg.z(), ba.x(), ba.y(), ba.z(),
       gravity.x(), gravity.y(), gravity.z(), eskf_options_.gyro_std_, eskf_options_.acce_std_);
+
+    // GNSS noise over the same standstill. Reported only, the filter keeps its parameters.
+    if (static_init_.GnssNoiseValid()) {
+      const Eigen::Vector3d pos_std = static_init_.GetGnssPositionStd();
+      const Eigen::Vector3d pos_lag1 = static_init_.GetGnssPositionLag1();
+      RCLCPP_INFO(
+        get_logger(),
+        "GNSS static noise (raw antenna readings, %zu samples over %.2f s): "
+        "horizontal std = %.4f m (east %.4f, north %.4f), height std = %.4f m, "
+        "heading std = %.4f deg (%zu valid)",
+        static_init_.GetGnssNumSamples(), static_init_.GetGnssDuration(),
+        static_init_.GetGnssHorizontalStd(), pos_std.x(), pos_std.y(), pos_std.z(),
+        static_init_.GetGnssHeadingStd(), static_init_.GetGnssNumHeadingSamples());
+      RCLCPP_INFO(
+        get_logger(),
+        "GNSS static noise lag-1 autocorrelation (0 = white, 1 = slow drift): "
+        "east %.3f, north %.3f, height %.3f, heading %.3f",
+        pos_lag1.x(), pos_lag1.y(), pos_lag1.z(), static_init_.GetGnssHeadingLag1());
+    } else {
+      RCLCPP_WARN(get_logger(), "GNSS static noise: too few readings at standstill, no estimate");
+    }
     return;
   }
 
@@ -122,6 +143,8 @@ void EskfRos::imu_callback(const sensor_msgs::msg::Imu & msg)
 void EskfRos::gnss_callback(const sad_msgs::msg::Gnss & msg)
 {
   if (!imu_inited_) {
+    // Not fused yet, but the readings taken at standstill tell how noisy the receiver is
+    static_init_.AddGNSS(GNSS(msg));
     return;
   }
 
@@ -194,7 +217,7 @@ void EskfRos::odom_callback(const sad_msgs::msg::WheelPulse & msg)
 
   // Before the static initialization: the wheel speed only tells whether the vehicle stands still
   if (!imu_inited_) {
-    imu_init_.AddOdom(odom);
+    static_init_.AddOdom(odom);
     return;
   }
 

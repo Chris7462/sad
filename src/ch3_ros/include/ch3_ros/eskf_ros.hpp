@@ -13,7 +13,7 @@
 #include <tf2_ros/transform_broadcaster.hpp>
 
 #include "ch3_ros/eskf.hpp"
-#include "ch3_ros/static_imu_init.hpp"
+#include "ch3_ros/static_init.hpp"
 
 
 /**
@@ -39,7 +39,7 @@ private:
   /// Publish the nominal state as tf and nav_msgs/Odometry, stamped with the data time
   void publish_state(const builtin_interfaces::msg::Time & stamp);
 
-  StaticIMUInit imu_init_;
+  StaticInit static_init_;
   ESKF eskf_;
   ESKF::Options eskf_options_;
 
