@@ -1,0 +1,3 @@
+[submodule "src/carla_gnss_processing"]
+	path = src/carla_gnss_processing
+	url = git@github.com-chris:Chris7462/carla_gnss_processing.git
