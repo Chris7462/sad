@@ -1,5 +1,7 @@
 #include <cmath>
 
+#include <Eigen/Geometry>
+
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <tf2_eigen/tf2_eigen.hpp>
 
@@ -17,6 +19,11 @@ EskfRos::EskfRos()
   with_odom_ = declare_parameter<bool>("with_odom", with_odom_);
   map_frame_ = declare_parameter<std::string>("map_frame", map_frame_);
   base_frame_ = declare_parameter<std::string>("base_frame", base_frame_);
+  gnss_frame_ = declare_parameter<std::string>("gnss_frame", gnss_frame_);
+  gnss_raw_frame_ = declare_parameter<std::string>("gnss_raw_frame", gnss_raw_frame_);
+  dr_frame_ = declare_parameter<std::string>("dr_frame", dr_frame_);
+  publish_dead_reckoning_ =
+    declare_parameter<bool>("publish_dead_reckoning", publish_dead_reckoning_);
 
   antenna_angle_ = declare_parameter<double>("antenna_angle", antenna_angle_);
   antenna_pos_.x() = declare_parameter<double>("antenna_pos_x", antenna_pos_.x());
@@ -46,6 +53,8 @@ EskfRos::EskfRos()
     declare_parameter<bool>("update_bias_acce", eskf_options_.update_bias_acce_);
 
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
+  static_tf_broadcaster_ = std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this);
+  publish_antenna_extrinsics();
   odom_pub_ = create_publisher<nav_msgs::msg::Odometry>("eskf/odometry", 10);
 
   // Reliable, matching the bag. Deep queues so nothing is dropped at high playback rates.
@@ -90,6 +99,7 @@ void EskfRos::imu_callback(const sensor_msgs::msg::Imu & msg)
     const Eigen::Vector3d ba = imu_init_.GetInitBa();
     const Eigen::Vector3d gravity = imu_init_.GetGravity();
     eskf_.SetInitialConditions(eskf_options_, bg, ba, gravity);
+    dr_eskf_.SetInitialConditions(eskf_options_, bg, ba, gravity);
     imu_inited_ = true;
 
     RCLCPP_INFO(
@@ -108,7 +118,12 @@ void EskfRos::imu_callback(const sensor_msgs::msg::Imu & msg)
     return;
   }
 
-  // 4. Propagate
+  // 4. Propagate the dead reckoning (prediction only, never corrected)
+  if (publish_dead_reckoning_ && dr_eskf_.Predict(imu)) {
+    publish_dead_reckoning(msg.header.stamp);
+  }
+
+  // 5. Propagate the filter
   const double dt = imu.timestamp_ - eskf_.GetCurrentTime();
   if (!eskf_.Predict(imu)) {
     RCLCPP_WARN_THROTTLE(
@@ -132,6 +147,13 @@ void EskfRos::gnss_callback(const sad_msgs::msg::Gnss & msg)
     fuse_gnss_position(gnss, msg.header.stamp);
   }
   // Otherwise the reading is dropped: without a heading it cannot start the filter
+
+  // Raw antenna position for visualization. Published for every reading once the local origin
+  // is known, whether or not the filter used it. Built from the message again, because the
+  // fuse functions above modify gnss.
+  if (first_gnss_set_) {
+    publish_raw_gnss(GNSS(msg), msg.header.stamp);
+  }
 }
 
 void EskfRos::fuse_gnss_pose(GNSS & gnss, const builtin_interfaces::msg::Time & stamp)
@@ -156,6 +178,9 @@ void EskfRos::fuse_gnss_pose(GNSS & gnss, const builtin_interfaces::msg::Time & 
   }
 
   if (!gnss_inited_) {
+    // Start the dead reckoning from the same pose and time. The first ObserveGps() call only
+    // sets the initial pose; this is the only GNSS reading dr_eskf_ ever sees.
+    dr_eskf_.ObserveGps(gnss);
     gnss_inited_ = true;
     RCLCPP_INFO(get_logger(), "First valid GNSS reading received, ESKF started.");
   }
@@ -207,6 +232,59 @@ void EskfRos::odom_callback(const sad_msgs::msg::WheelPulse & msg)
         eskf_.GetCurrentTime() - odom.timestamp_);
     }
   }
+}
+
+void EskfRos::publish_antenna_extrinsics()
+{
+  // T_base_antenna, the same extrinsics as TBG in ConvertGps2UTM
+  const Eigen::Vector3d trans(antenna_pos_.x(), antenna_pos_.y(), 0.0);
+  const Eigen::Quaterniond quat(
+    Eigen::AngleAxisd(antenna_angle_ * M_PI / 180.0, Eigen::Vector3d::UnitZ()));
+
+  geometry_msgs::msg::TransformStamped tf_msg;
+  tf_msg.header.stamp = now();
+  tf_msg.header.frame_id = base_frame_;
+  tf_msg.child_frame_id = gnss_frame_;
+  tf_msg.transform.translation = tf2::toMsg2(trans);
+  tf_msg.transform.rotation = tf2::toMsg(quat);
+  static_tf_broadcaster_->sendTransform(tf_msg);
+}
+
+void EskfRos::publish_raw_gnss(GNSS gnss, const builtin_interfaces::msg::Time & stamp)
+{
+  // Antenna position only: no extrinsics and no heading are needed
+  if (!ConvertGps2UTMOnlyTrans(gnss)) {
+    return;
+  }
+  const Eigen::Vector3d trans = gnss.utm_pose_.translation() - origin_;
+
+  // Antenna heading as in ConvertGps2UTM when it is valid, identity otherwise. Only the
+  // position matters for the trajectory.
+  Eigen::Quaterniond quat = Eigen::Quaterniond::Identity();
+  if (gnss.heading_valid_) {
+    quat = Eigen::AngleAxisd((90.0 - gnss.heading_) * M_PI / 180.0, Eigen::Vector3d::UnitZ());
+  }
+
+  geometry_msgs::msg::TransformStamped tf_msg;
+  tf_msg.header.stamp = stamp;
+  tf_msg.header.frame_id = map_frame_;
+  tf_msg.child_frame_id = gnss_raw_frame_;
+  tf_msg.transform.translation = tf2::toMsg2(trans);
+  tf_msg.transform.rotation = tf2::toMsg(quat);
+  tf_broadcaster_->sendTransform(tf_msg);
+}
+
+void EskfRos::publish_dead_reckoning(const builtin_interfaces::msg::Time & stamp)
+{
+  const NavState state = dr_eskf_.GetNominalState();
+
+  geometry_msgs::msg::TransformStamped tf_msg;
+  tf_msg.header.stamp = stamp;
+  tf_msg.header.frame_id = map_frame_;
+  tf_msg.child_frame_id = dr_frame_;
+  tf_msg.transform.translation = tf2::toMsg2(state.p_);
+  tf_msg.transform.rotation = tf2::toMsg(state.R_.quat());
+  tf_broadcaster_->sendTransform(tf_msg);
 }
 
 void EskfRos::publish_state(const builtin_interfaces::msg::Time & stamp)

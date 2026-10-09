@@ -4,6 +4,7 @@ from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
@@ -35,6 +36,12 @@ def generate_launch_description():
         description='Also fuse the wheel speed'
     )
 
+    dead_reckoning_arg = DeclareLaunchArgument(
+        'dead_reckoning',
+        default_value='true',
+        description='Also show the pure IMU dead reckoning (it drifts away quickly)'
+    )
+
     eskf_ros_node = Node(
         package='ch3_ros',
         executable='eskf_ros_node',
@@ -48,7 +55,12 @@ def generate_launch_description():
             'with_odom': ParameterValue(LaunchConfiguration('with_odom'), value_type=bool),
             'antenna_angle': 12.06,
             'antenna_pos_x': -0.17,
-            'antenna_pos_y': -0.20
+            'antenna_pos_y': -0.20,
+            'gnss_frame': 'gnss_link',
+            'gnss_raw_frame': 'gnss_raw',
+            'dr_frame': 'imu_dr',
+            'publish_dead_reckoning': ParameterValue(
+                LaunchConfiguration('dead_reckoning'), value_type=bool)
         }]
     )
 
@@ -61,6 +73,52 @@ def generate_launch_description():
             'use_sim_time': True,
             'target_frame_name': 'map',
             'source_frame_name': 'base_link',
+            'trajectory_update_rate': 10.0,
+            'trajectory_publish_rate': 10.0
+        }]
+    )
+
+    # Antenna position predicted by the filter: map -> base_link -> gnss_link
+    eskf_antenna_trajectory_node = Node(
+        package='trajectory_server',
+        executable='trajectory_server_node',
+        name='trajectory_server_node',
+        namespace='eskf_antenna_trajectory',
+        parameters=[{
+            'use_sim_time': True,
+            'target_frame_name': 'map',
+            'source_frame_name': 'gnss_link',
+            'trajectory_update_rate': 10.0,
+            'trajectory_publish_rate': 10.0
+        }]
+    )
+
+    # Antenna position measured by GNSS: map -> gnss_raw
+    gnss_raw_trajectory_node = Node(
+        package='trajectory_server',
+        executable='trajectory_server_node',
+        name='trajectory_server_node',
+        namespace='gnss_raw_trajectory',
+        parameters=[{
+            'use_sim_time': True,
+            'target_frame_name': 'map',
+            'source_frame_name': 'gnss_raw',
+            'trajectory_update_rate': 10.0,
+            'trajectory_publish_rate': 10.0
+        }]
+    )
+
+    # Body position from pure IMU dead reckoning: map -> imu_dr
+    imu_dr_trajectory_node = Node(
+        package='trajectory_server',
+        executable='trajectory_server_node',
+        name='trajectory_server_node',
+        namespace='imu_dr_trajectory',
+        condition=IfCondition(LaunchConfiguration('dead_reckoning')),
+        parameters=[{
+            'use_sim_time': True,
+            'target_frame_name': 'map',
+            'source_frame_name': 'imu_dr',
             'trajectory_update_rate': 10.0,
             'trajectory_publish_rate': 10.0
         }]
@@ -86,8 +144,12 @@ def generate_launch_description():
         rate_arg,
         start_offset_arg,
         with_odom_arg,
+        dead_reckoning_arg,
         eskf_ros_node,
         trajectory_node,
+        eskf_antenna_trajectory_node,
+        gnss_raw_trajectory_node,
+        imu_dr_trajectory_node,
         rviz_node,
         TimerAction(
             period=3.0,  # give the nodes time to subscribe before playback starts
