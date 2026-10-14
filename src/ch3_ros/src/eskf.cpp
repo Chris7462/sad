@@ -65,118 +65,29 @@ bool ESKF::Predict(const IMU & imu)
     return false;
   }
 
-  // --------------------------------------------------------------------------
-  // Save the nominal state at time k.
-  //
-  // The discrete propagation equations for p_{k+1} and v_{k+1} below are
-  // evaluated using R_k. Therefore, the corresponding Jacobian blocks in F
-  // must also be evaluated at the same R_k.
-  // --------------------------------------------------------------------------
-  const manif::SO3d R_k = R_;
-  const Mat3d Rk = R_k.rotation();
-  const Vec3d acce = imu.acce_ - ba_;
-  const Vec3d gyro = imu.gyro_ - bg_;
-
-  // --------------------------------------------------------------------------
   // Nominal state propagation
-  //
-  // p_{k+1} = p_k + v_k dt + 1/2 R_k (a_tilde - b_a) dt^2 + 1/2 g_k dt^2
-  // v_{k+1} = v_k + R_k (a_tilde - b_a) dt + g_k dt
-  // --------------------------------------------------------------------------
-  const Vec3d acce_world = R_k.act(acce);
+  const Vec3d new_p = p_ + v_ * dt + 0.5 * (R_ * (imu.acce_ - ba_)) * dt * dt + 0.5 * g_ * dt * dt;
+  const Vec3d new_v = v_ + R_ * (imu.acce_ - ba_) * dt + g_ * dt;
+  const Sophus::SO3d new_R = R_ * Sophus::SO3d::exp((imu.gyro_ - bg_) * dt);
 
-  const Vec3d new_p = p_ + v_ * dt + 0.5 * acce_world * dt * dt + 0.5 * g_ * dt * dt;
-  const Vec3d new_v = v_ + acce_world * dt + g_ * dt;
+  // Error-state propagation: Jacobian F of the motion model, eq. (3.47).
+  // Unlike the book, F is built before the nominal state is committed, so R_ here is R_k,
+  // the same rotation the propagation of p and v above used.
+  Mat18d F = Mat18d::Identity();                                                  // diagonal
+  F.block<3, 3>(0, 3) = Mat3d::Identity() * dt;                                   // p wrt v
+  F.block<3, 3>(3, 6) = -R_.matrix() * Sophus::SO3d::hat(imu.acce_ - ba_) * dt;   // v wrt theta
+  F.block<3, 3>(3, 12) = -R_.matrix() * dt;                                       // v wrt ba
+  F.block<3, 3>(3, 15) = Mat3d::Identity() * dt;                                  // v wrt g
+  F.block<3, 3>(6, 6) = Sophus::SO3d::exp(-(imu.gyro_ - bg_) * dt).matrix();      // theta wrt theta
+  F.block<3, 3>(6, 9) = -Mat3d::Identity() * dt;                                  // theta wrt bg
 
-  // --------------------------------------------------------------------------
-  // Rotation propagation
-  //
-  // R_{k+1} = R_k (+) tau = R_k Exp(tau)
-  // tau = (omega_tilde - b_g) dt
-  //
-  // manif also returns the local Jacobians:
-  //   J_R   = d(R_{k+1}) / d(R_k) = Exp(-tau)
-  //   J_tau = d(R_{k+1}) / d(tau) = Jr(tau)
-  // where Jr is the right Jacobian of SO(3).
-  // --------------------------------------------------------------------------
-  manif::SO3d::Jacobian J_R, J_tau;
-  const manif::SO3Tangentd tau(gyro * dt);
-  const manif::SO3d new_R = R_k.rplus(tau, J_R, J_tau);
-
-  // --------------------------------------------------------------------------
-  // Error-state propagation:
-  //
-  //   dx = [ dp, dv, dtheta, dbg, dba, dg ]
-  //
-  // Instead of starting from the continuous-time error-state equations and
-  // using F_d ~= I + F_c dt, construct F directly by linearizing the discrete
-  // nominal propagation equations above.
-  //
-  // This keeps several O(dt^2) terms in the position row that are absent in
-  // the first-order discretization used in the book.
-  // --------------------------------------------------------------------------
-  Mat18d F = Mat18d::Identity();
-  const Mat3d I3 = Mat3d::Identity();
-
-  // --------------------------------------------------------------------------
-  // Position row
-  // p_{k+1} = p_k + v_k dt + 1/2 R_k (a_tilde - b_a) dt^2 + 1/2 g_k dt^2
-  // --------------------------------------------------------------------------
-  F.block<3, 3>(0, 3) = I3 * dt;                                  // p wrt v
-  F.block<3, 3>(0, 6) = -0.5 * Rk * manif::skew(acce) * dt * dt;  // p wrt theta
-  F.block<3, 3>(0, 12) = -0.5 * Rk * dt * dt;                     // p wrt ba
-  F.block<3, 3>(0, 15) = 0.5 * I3 * dt * dt;                      // p wrt g
-
-  // --------------------------------------------------------------------------
-  // Velocity row
-  // v_{k+1} = v_k + R_k (a_tilde - b_a) dt + g_k dt
-  // --------------------------------------------------------------------------
-  F.block<3, 3>(3, 6) = -Rk * manif::skew(acce) * dt;             // v wrt theta
-  F.block<3, 3>(3, 12) = -Rk * dt;                                // v wrt ba
-  F.block<3, 3>(3, 15) = I3 * dt;                                 // v wrt g
-
-  // --------------------------------------------------------------------------
-  // Rotation row
-  // R_{k+1} = R_k Exp(tau)
-  //
-  // theta wrt theta:
-  //   F_theta_theta = J_R = Exp(-tau)
-  //
-  // theta wrt gyro bias:
-  //   tau = (omega_tilde - b_g) dt
-  //   d tau / d b_g = -I dt
-  //
-  // therefore
-  //   F_theta_bg = J_tau (-I dt)
-  //              = -Jr(tau) dt
-  // --------------------------------------------------------------------------
-  F.block<3, 3>(6, 6) = J_R;                                      // theta wrt theta
-  F.block<3, 3>(6, 9) = -J_tau * dt;                              // theta wrt bg
-
-  // --------------------------------------------------------------------------
-  // Bias and gravity rows
-  //
-  // b_g,k+1 = b_g,k
-  // b_a,k+1 = b_a,k
-  // g_k+1   = g_k
-  //
-  // Their diagonal blocks are already Identity because F was initialized with
-  // Mat18d::Identity().
-  // --------------------------------------------------------------------------
-
-  // --------------------------------------------------------------------------
-  // Covariance propagation
-  // --------------------------------------------------------------------------
+  // Mean and covariance prediction. dx_ is zero after every reset, so F * dx_ is skipped.
   cov_ = F * cov_.eval() * F.transpose() + Q_;
 
-  // --------------------------------------------------------------------------
-  // Commit nominal state propagation only after F has been constructed using
-  // the time-k nominal state.
-  // --------------------------------------------------------------------------
+  // Commit the nominal state only now. The other states do not change.
   R_ = new_R;
   v_ = new_v;
   p_ = new_p;
-
   current_time_ = imu.timestamp_;
 
   return true;
@@ -200,7 +111,7 @@ bool ESKF::ObserveWheelSpeed(const Odom & odom)
     options_.wheel_radius_ * 2.0 * M_PI / options_.circle_pulse_ / options_.odom_span_;
   const double average_vel = 0.5 * (odom.left_pulse_ + odom.right_pulse_) * pulse_to_speed;
 
-  const Vec3d vel_world = R_.act(Vec3d(average_vel, 0.0, 0.0));
+  const Vec3d vel_world = R_ * Vec3d(average_vel, 0.0, 0.0);
 
   dx_ = K * (vel_world - v_);
   cov_ = (Mat18d::Identity() - K * H) * cov_;
@@ -213,7 +124,7 @@ bool ESKF::ObserveGps(const GNSS & gnss)
 {
   if (first_gnss_) {
     // The first reading sets the initial pose
-    R_ = manif::SO3d(gnss.utm_pose_.quat());
+    R_ = gnss.utm_pose_.so3();
     p_ = gnss.utm_pose_.translation();
     first_gnss_ = false;
     current_time_ = gnss.unix_time_;
@@ -253,7 +164,7 @@ bool ESKF::ObservePosition(double timestamp, const Vec3d & position)
   return true;
 }
 
-bool ESKF::ObserveSE3(const manif::SE3d & pose, double trans_std, double ang_std)
+bool ESKF::ObserveSE3(const Sophus::SE3d & pose, double trans_std, double ang_std)
 {
   const double t2 = trans_std * trans_std;
   const double a2 = ang_std * ang_std;
@@ -263,7 +174,7 @@ bool ESKF::ObserveSE3(const manif::SE3d & pose, double trans_std, double ang_std
   return ObserveSE3(pose, noise);
 }
 
-bool ESKF::ObserveSE3(const manif::SE3d & pose, const Mat6d & noise)
+bool ESKF::ObserveSE3(const Sophus::SE3d & pose, const Mat6d & noise)
 {
   // Observes p and R: H is 6x18
   Eigen::Matrix<double, 6, 18> H = Eigen::Matrix<double, 6, 18>::Zero();
@@ -274,11 +185,9 @@ bool ESKF::ObserveSE3(const manif::SE3d & pose, const Mat6d & noise)
     cov_ * H.transpose() * (H * cov_ * H.transpose() + noise).inverse();
 
   // Innovation
-  const manif::SO3d R_obs(pose.quat());
   Vec6d innov = Vec6d::Zero();
   innov.head<3>() = pose.translation() - p_;
-  //innov.tail<3>() = (R_.inverse() * R_obs).log().coeffs();   // eq. (3.67)
-  innov.tail<3>() = R_obs.rminus(R_).coeffs();   // Log(R^-1 * R_obs), eq. (3.67)
+  innov.tail<3>() = (R_.inverse() * pose.so3()).log();   // eq. (3.67)
 
   dx_ = K * innov;
   cov_ = (Mat18d::Identity() - K * H) * cov_;
@@ -291,8 +200,7 @@ void ESKF::UpdateAndReset()
 {
   p_ += dx_.segment<3>(0);
   v_ += dx_.segment<3>(3);
-  // R_ = R_ * Exp(dx_.segment<3>(6));
-  R_ = R_.rplus(manif::SO3Tangentd(dx_.segment<3>(6)));
+  R_ = R_ * Sophus::SO3d::exp(dx_.segment<3>(6));
 
   if (options_.update_bias_gyro_) {
     bg_ += dx_.segment<3>(9);
@@ -311,7 +219,6 @@ void ESKF::UpdateAndReset()
 void ESKF::ProjectCov()
 {
   Mat18d J = Mat18d::Identity();
-  //J.block<3, 3>(6, 6) = Mat3d::Identity() - 0.5 * Hat(dx_.segment<3>(6));
-  J.block<3, 3>(6, 6) = Mat3d::Identity() - 0.5 * manif::skew(dx_.segment<3>(6));
+  J.block<3, 3>(6, 6) = Mat3d::Identity() - 0.5 * Sophus::SO3d::hat(dx_.segment<3>(6));
   cov_ = J * cov_ * J.transpose();
 }

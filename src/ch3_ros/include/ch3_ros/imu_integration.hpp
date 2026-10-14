@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Eigen/Core>
-#include <manif/SO3.h>
+#include <sophus/so3.hpp>
 
 #include "ch3_ros/imu.hpp"
 
@@ -13,7 +13,7 @@ public:
 
   void AddIMU(const IMU & imu);
 
-  manif::SO3d GetR() const { return R_; }
+  Sophus::SO3d GetR() const { return R_; }
   Eigen::Vector3d GetV() const { return v_; }
   Eigen::Vector3d GetP() const { return p_; }
 
@@ -24,7 +24,7 @@ private:
 
   double timestamp_ = 0.0;
 
-  manif::SO3d R_ = manif::SO3d::Identity();
+  Sophus::SO3d R_ = Sophus::SO3d();
   Eigen::Vector3d v_ = Eigen::Vector3d::Zero();
   Eigen::Vector3d p_ = Eigen::Vector3d::Zero();
 };

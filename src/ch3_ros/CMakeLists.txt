@@ -20,8 +20,7 @@ find_package(sensor_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(manif REQUIRED)
-#find_package(Sophus REQUIRED)
+find_package(Sophus REQUIRED)
 #find_package(glog REQUIRED)
 find_package(sad_msgs REQUIRED)
 
@@ -45,7 +44,7 @@ target_link_libraries(imu_ros_node
     ${sensor_msgs_TARGETS}
     ${geometry_msgs_TARGETS}
     Eigen3::Eigen
-    MANIF::manif)
+    Sophus::Sophus)
 
 target_compile_features(imu_ros_node PRIVATE cxx_std_20)
 
@@ -71,8 +70,7 @@ target_link_libraries(gnss_ros_node
     ${tf2_eigen_TARGETS}
     ${sensor_msgs_TARGETS}
     Eigen3::Eigen
-    #Sophus::Sophus
-    MANIF::manif
+    Sophus::Sophus
     #glog::glog
     ${sad_msgs_TARGETS}
     ${GeographicLib_LIBRARIES})
@@ -105,7 +103,7 @@ target_link_libraries(eskf_ros_node
     ${geometry_msgs_TARGETS}
     ${nav_msgs_TARGETS}
     Eigen3::Eigen
-    MANIF::manif
+    Sophus::Sophus
     ${sad_msgs_TARGETS}
     ${GeographicLib_LIBRARIES})
 

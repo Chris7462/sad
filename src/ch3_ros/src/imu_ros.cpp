@@ -41,6 +41,6 @@ void ImuRos::imu_callback(const sensor_msgs::msg::Imu & msg)
   tf_msg.header.frame_id = "map";
   tf_msg.child_frame_id = "imu_link";
   tf_msg.transform.translation = tf2::toMsg2(imu_integ_.GetP());
-  tf_msg.transform.rotation = tf2::toMsg(imu_integ_.GetR().quat());
+  tf_msg.transform.rotation = tf2::toMsg(imu_integ_.GetR().unit_quaternion());
   tf_broadcaster_->sendTransform(tf_msg);
 }

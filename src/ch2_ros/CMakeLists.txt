@@ -18,7 +18,7 @@ find_package(std_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_eigen REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(manif REQUIRED)
+find_package(Sophus REQUIRED)
 
 add_executable(${PROJECT_NAME}_node
   src/motion.cpp
@@ -33,7 +33,7 @@ target_link_libraries(${PROJECT_NAME}_node
     ${tf2_ros_TARGETS}
     ${tf2_eigen_TARGETS}
     Eigen3::Eigen
-    MANIF::manif)
+    Sophus::Sophus)
 
 target_compile_features(${PROJECT_NAME}_node PRIVATE cxx_std_20)
 

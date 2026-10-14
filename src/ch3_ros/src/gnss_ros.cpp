@@ -38,14 +38,10 @@ void GnssRos::gnss_callback(const sad_msgs::msg::Gnss & msg)
     first_gnss_set_ = true;
   }
 
-  //gnss_out.utm_pose_.translation() -= origin;
-  //auto & trans = gnss_out.utm_pose_.translation();
-  //auto & quat = gnss_out.utm_pose_.unit_quaternion();
-
-  gnss_out.utm_pose_.translation(gnss_out.utm_pose_.translation() - origin_);
+  gnss_out.utm_pose_.translation() -= origin_;
 
   const Eigen::Vector3d trans = gnss_out.utm_pose_.translation();
-  const Eigen::Quaterniond quat = gnss_out.utm_pose_.quat();
+  const Eigen::Quaterniond quat = gnss_out.utm_pose_.unit_quaternion();
 
   RCLCPP_INFO_THROTTLE(get_logger(), *get_clock(), 1000,
     "GNSS at time %.3f: Quat: [%.3f, %.3f, %.3f, %.3f], tran: [%.3f, %.3f, %.3f]",

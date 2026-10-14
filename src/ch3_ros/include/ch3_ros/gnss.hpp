@@ -1,9 +1,7 @@
 #pragma once
 
 #include <Eigen/Core>
-//#include <sophus/se3.hpp>
-#include <manif/SE3.h>
-
+#include <sophus/se3.hpp>
 
 #include <rclcpp/time.hpp>
 #include <sad_msgs/msg/gnss.hpp>
@@ -54,6 +52,5 @@ struct GNSS {
   UTMCoordinate utm_;
   bool utm_valid_ = false;
 
-  //Sophus::SE3d utm_pose_;
-  manif::SE3d utm_pose_;
+  Sophus::SE3d utm_pose_;
 };

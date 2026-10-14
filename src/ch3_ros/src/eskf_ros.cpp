@@ -145,7 +145,7 @@ void EskfRos::fuse_gnss_pose(GNSS & gnss, const builtin_interfaces::msg::Time & 
     origin_ = gnss.utm_pose_.translation();
     first_gnss_set_ = true;
   }
-  gnss.utm_pose_.translation(gnss.utm_pose_.translation() - origin_);
+  gnss.utm_pose_.translation() -= origin_;
 
   if (!eskf_.ObserveGps(gnss)) {
     RCLCPP_WARN_THROTTLE(
@@ -175,7 +175,7 @@ void EskfRos::fuse_gnss_position(GNSS & gnss, const builtin_interfaces::msg::Tim
   const NavState state = eskf_.GetNominalState();
   const Eigen::Vector3d lever_arm(antenna_pos_.x(), antenna_pos_.y(), 0.0);
   const Eigen::Vector3d position =
-    gnss.utm_pose_.translation() - state.R_.act(lever_arm) - origin_;
+    gnss.utm_pose_.translation() - state.R_ * lever_arm - origin_;
 
   if (!eskf_.ObservePosition(gnss.unix_time_, position)) {
     RCLCPP_WARN_THROTTLE(
@@ -212,7 +212,7 @@ void EskfRos::odom_callback(const sad_msgs::msg::WheelPulse & msg)
 void EskfRos::publish_state(const builtin_interfaces::msg::Time & stamp)
 {
   const NavState state = eskf_.GetNominalState();
-  const Eigen::Quaterniond quat = state.R_.quat();
+  const Eigen::Quaterniond quat = state.R_.unit_quaternion();
 
   geometry_msgs::msg::TransformStamped tf_msg;
   tf_msg.header.stamp = stamp;
@@ -223,7 +223,7 @@ void EskfRos::publish_state(const builtin_interfaces::msg::Time & stamp)
   tf_broadcaster_->sendTransform(tf_msg);
 
   // nav_msgs/Odometry: pose in header.frame_id, twist in child_frame_id (body frame)
-  const Eigen::Vector3d v_body = state.R_.inverse().act(state.v_);
+  const Eigen::Vector3d v_body = state.R_.inverse() * state.v_;
 
   nav_msgs::msg::Odometry odom_msg;
   odom_msg.header.stamp = stamp;

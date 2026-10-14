@@ -3,8 +3,8 @@
 #include <cmath>
 
 #include <Eigen/Core>
-#include <manif/SE3.h>
-#include <manif/SO3.h>
+#include <sophus/se3.hpp>
+#include <sophus/so3.hpp>
 
 #include "ch3_ros/gnss.hpp"
 #include "ch3_ros/imu.hpp"
@@ -22,8 +22,9 @@
  *  - the GNSS update uses the 6x6 GNSS noise matrix, so the height noise takes effect
  *  - data older than the filter time is rejected (returns false) instead of asserting
  *  - ObservePosition() lets GNSS readings without a valid heading still correct the position
- *  - the rotation blocks of F come from the Jacobians of manif's rplus; the theta-wrt-bg block
- *    is therefore -Jr(tau) * dt instead of the book's first-order -I * dt
+ *
+ * The prediction (nominal propagation and F) is the same as the book, eq. (3.47), except that
+ * F is evaluated at R_k (the rotation before the update) instead of R_{k+1}.
  */
 class ESKF
 {
@@ -88,10 +89,10 @@ public:
 
   /// Generic pose observation with isotropic noise (standard deviations)
   bool ObserveSE3(
-    const manif::SE3d & pose, double trans_std = 0.1, double ang_std = 1.0 * M_PI / 180.0);
+    const Sophus::SE3d & pose, double trans_std = 0.1, double ang_std = 1.0 * M_PI / 180.0);
 
   NavState GetNominalState() const {return NavState(current_time_, R_, p_, v_, bg_, ba_);}
-  manif::SE3d GetNominalSE3() const {return manif::SE3d(p_, R_);}
+  Sophus::SE3d GetNominalSE3() const {return Sophus::SE3d(R_, p_);}
   Vec3d GetGravity() const {return g_;}
   Mat18d GetCov() const {return cov_;}
   double GetCurrentTime() const {return current_time_;}
@@ -103,7 +104,7 @@ private:
   void BuildNoise(const Options & options);
 
   /// Pose observation with a full 6x6 noise covariance (translation first, then rotation)
-  bool ObserveSE3(const manif::SE3d & pose, const Mat6d & noise);
+  bool ObserveSE3(const Sophus::SE3d & pose, const Mat6d & noise);
 
   /// Fold the error state into the nominal state, then reset it
   void UpdateAndReset();
@@ -116,7 +117,7 @@ private:
   /// Nominal state
   Vec3d p_ = Vec3d::Zero();
   Vec3d v_ = Vec3d::Zero();
-  manif::SO3d R_ = manif::SO3d::Identity();
+  Sophus::SO3d R_ = Sophus::SO3d();
   Vec3d bg_ = Vec3d::Zero();
   Vec3d ba_ = Vec3d::Zero();
   Vec3d g_ = Vec3d(0.0, 0.0, -9.8);
