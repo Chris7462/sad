@@ -3,7 +3,7 @@
 #include <Eigen/Core>
 #include <sophus/so3.hpp>
 
-#include "ch3_ros/imu.hpp"
+#include <sad_common/imu.hpp>
 
 class IMUIntegration
 {

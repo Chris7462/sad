@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ch3_ros/gnss.hpp"
+#include "sad_common/gnss.hpp"
 
 
 /**

@@ -21,11 +21,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Sophus REQUIRED)
-#find_package(glog REQUIRED)
 find_package(sad_msgs REQUIRED)
-
-list(APPEND CMAKE_MODULE_PATH /usr/share/cmake/geographiclib)
-find_package(GeographicLib REQUIRED)
+find_package(sad_common REQUIRED)
 
 # IMU integration node
 add_executable(imu_ros_node
@@ -44,7 +41,8 @@ target_link_libraries(imu_ros_node
     ${sensor_msgs_TARGETS}
     ${geometry_msgs_TARGETS}
     Eigen3::Eigen
-    Sophus::Sophus)
+    Sophus::Sophus
+    sad_common::sad_common)
 
 target_compile_features(imu_ros_node PRIVATE cxx_std_20)
 
@@ -56,12 +54,10 @@ target_compile_options(imu_ros_node PRIVATE
 # GNSS node
 add_executable(gnss_ros_node
   src/gnss_ros_node.cpp
-  src/gnss_ros.cpp
-  src/utm_convert.cpp)
+  src/gnss_ros.cpp)
 
 target_include_directories(gnss_ros_node PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${GeographicLib_INCLUDE_DIRS})
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 target_link_libraries(gnss_ros_node
   PRIVATE
@@ -69,11 +65,11 @@ target_link_libraries(gnss_ros_node
     ${tf2_ros_TARGETS}
     ${tf2_eigen_TARGETS}
     ${sensor_msgs_TARGETS}
+    ${geometry_msgs_TARGETS}
     Eigen3::Eigen
     Sophus::Sophus
-    #glog::glog
     ${sad_msgs_TARGETS}
-    ${GeographicLib_LIBRARIES})
+    sad_common::sad_common)
 
 target_compile_features(gnss_ros_node PRIVATE cxx_std_20)
 
@@ -85,14 +81,10 @@ target_compile_options(gnss_ros_node PRIVATE
 # ESKF GNSS + IMU fusion node
 add_executable(eskf_ros_node
   src/eskf_ros_node.cpp
-  src/eskf_ros.cpp
-  src/eskf.cpp
-  src/static_imu_init.cpp
-  src/utm_convert.cpp)
+  src/eskf_ros.cpp)
 
 target_include_directories(eskf_ros_node PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/include
-  ${GeographicLib_INCLUDE_DIRS})
+  ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 target_link_libraries(eskf_ros_node
   PRIVATE
@@ -105,7 +97,7 @@ target_link_libraries(eskf_ros_node
     Eigen3::Eigen
     Sophus::Sophus
     ${sad_msgs_TARGETS}
-    ${GeographicLib_LIBRARIES})
+    sad_common::sad_common)
 
 target_compile_features(eskf_ros_node PRIVATE cxx_std_20)
 

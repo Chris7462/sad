@@ -7,7 +7,7 @@
 #include <sad_msgs/msg/gnss.hpp>
 #include <tf2_ros/transform_broadcaster.hpp>
 
-#include "ch3_ros/gnss.hpp"
+#include <sad_common/gnss.hpp>
 
 
 class GnssRos : public rclcpp::Node

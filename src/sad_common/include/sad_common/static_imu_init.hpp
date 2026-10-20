@@ -5,8 +5,8 @@
 
 #include <Eigen/Core>
 
-#include "ch3_ros/imu.hpp"
-#include "ch3_ros/odom.hpp"
+#include "sad_common/imu.hpp"
+#include "sad_common/odom.hpp"
 
 /**
  * Static IMU initializer (book section 3.5.4).

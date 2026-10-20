@@ -2,7 +2,7 @@
 
 #include <rclcpp/logging.hpp>
 
-#include "ch3_ros/static_imu_init.hpp"
+#include "sad_common/static_imu_init.hpp"
 
 
 namespace
