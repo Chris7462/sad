@@ -23,6 +23,7 @@ find_package(GeographicLib REQUIRED)
 
 add_library(${PROJECT_NAME} STATIC
   src/eskf.cpp
+  src/imu_preintegration.cpp
   src/static_imu_init.cpp
   src/utm_convert.cpp)
 
